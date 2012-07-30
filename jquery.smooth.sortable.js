@@ -1,5 +1,5 @@
 /*!
- * jQuery app framework
+ * jQuery smooth sortable
  *
  * Copyright 2012, usp
  * Dual licensed under the MIT or GPL Version 2 licenses.
@@ -15,65 +15,59 @@
 	 */
 	var sortable = $.sub();
 	sortable.fn.extend( {
-		startDrag : function(){
+		startDrag : function( baseY ){
 			var that =		this,
-				prevY =		e.pageY,
-				factory =	placeholderGroupFactory( that.outerHeight() ),
-				moved =		false;
+				factory =	placeholderGroupFactory( that.outerHeight( true ) ),
+				prevY =		baseY;
 
-			$( document ).mousemove( observe );
+			that.after( factory.get() )
+				.css( { top : '' , position : 'absolute' } )
+				.addClass( 'ui-drag' );
+
 			$( document ).mouseup( up );
+			$( document ).mousemove( move );
 
-			function observe ( e ) {
-				if ( Math.abs( ( prevY - e.pageY ) ) > 10 ) {
-					moved = true;
-					$( document ).unbind( 'mousemove' , observe );
-					$( document ).mousemove( move );
-					that.after( factory.get() );
-					that.css( 'top' , 'auto' ).addClass( 'ui-drag' );
-				}
+			that.one( 'sortend' , function( e ){
+				factory.die();
+
+				that.removeClass( 'ui-drag' )
+					.css( { top : '' , position : '' } );
+				$(document).unbind( 'mouseup' , up );
+				$(document).unbind( 'mousemove' , move );
+			} );
+
+			function up( e ) {
+				that.endDrag();
 			}
-
-			function move(e){
+			function move( e ) {
 				var pos = that.position();
 
-				//ドラッグ
+				// drag
 				that.css( 'top' , pos.top + ( e.pageY - prevY ) );
 				prevY = e.pageY;
 
-				//入れ替え
-				var result = that.lookUp( factory.head() , pos.top - placeHolder.position().top );
+				// sort
+				var result = that.lookUp( factory.head() , pos.top - factory.head().position().top );
 				if( result ){
 					factory.bye();
 					result.target[ result.method ]( factory.get() );
 					factory.head().before(that);
 				}
 			}
-			function up(e){
-				factory.die();
-				that.removeClass('ui-drag').css('top', 'auto');
-				$(document).unbind('mousemove', observe);
-				$(document).unbind('mousemove',move);
-				$(document).unbind('mouseup',up);
-
-				if ( !moved ) {
-					that.trigger( 'sortclick' );
-				}
-				else {
-					that.trigger( 'sortend' );
-				}
-			}
 		},
-		lookUp : function(target, direction){
-			if (direction==0) {
+		endDrag : function(){
+			this.trigger( 'sortend' );
+		},
+		lookUp : function( target , direction ){
+			if ( direction === 0 ) {
 				return false;
 			}
 
 			target = direction < 0 ? this.findPrevSibling( target ) : this.findNextSibling( target );
 			if( !target ) return false;
 
-			var targetTop=target.position().top,
-				subjectTop=this.position().top;
+			var targetTop = target.position().top,
+				subjectTop = this.position().top;
 
 			if( targetTop < subjectTop && direction > 0 )		return {target:target, method:'after'};
 			else if( targetTop > subjectTop && direction < 0 )	return {target:target, method:'before'};
@@ -82,29 +76,47 @@
 			this.lookUp(target, direction);
 		},
 		findPrevSibling : function( target ){
-			var prev=target.prev();
-			if(!prev.length)					return false;
-			if(prev.hasClass('ui-placeholder'))	return this.findPrevSibling(prev);
-			if(prev.get(0)==this.get(0))		return this.findPrevSibling(prev);
-			else								return prev;
+			var prev = target.prev();
+			if( !prev.length )						return false;
+			if( prev.hasClass( 'ui-placeholder' ) )	return this.findPrevSibling(prev);
+			if( prev[ 0 ] == this[ 0 ] )			return this.findPrevSibling(prev);
+			else									return prev;
 		},
 		findNextSibling:function(target){
-			var next=target.next();
-			if(!next.length)					return false;
-			if(next.hasClass('ui-placeholder'))	return this.findNextSibling(next);
-			else								return next;
+			var next = target.next();
+			if( !next.length )						return false;
+			if( next.hasClass( 'ui-placeholder' ) )	return this.findNextSibling(next);
+			else									return next;
 		}
 	} );
 
-	$.fn.sortable = function(){
+	$.fn.sortable = function( threshold ){
 		var that = sortable( this );
+		threshold = threshold !== undefined ? threshold : 10;
 
+		// bind
 		that.bind( 'selectstart' , function( e ){
 			e.preventDefault();
 		} );
 		that.bind( 'mousedown' , function( e ){
-			that.startDrag();
 			e.preventDefault();
+
+			var baseY = e.pageY;
+			$( document ).mouseup( up );
+			$( document ).mousemove( move );
+			
+			function move ( e ) {
+				if ( Math.abs( ( baseY - e.pageY ) ) > threshold ) {
+					$( document ).unbind( 'mousemove' , move );
+					$( document ).unbind( 'mouseup' , up );
+					that.startDrag( baseY );
+				}
+			}
+			function up ( e ) { // that means he doesn't move
+				$( document ).unbind( 'mousemove' , move );
+				$( document ).unbind( 'mouseup' , up );
+				that.trigger( 'sortclick' );
+			}
 		} );
 
 		return that;
@@ -134,12 +146,12 @@
 				if ( target.data( 'statSeed' ) < 0 ) {
 					target.data( 'easedStat' , $.easing.easeInQuad( undefined , target.data( 'stat' ) , 0 , 1 , duration ) );
 				}
-				summedEasedStat+=target.data( 'easedStat' );
+				summedEasedStat += target.data( 'easedStat' );
 
-				if ( target.stat >= duration ) {
+				if ( target.data( 'stat' ) >= duration ) {
 					target.data( 'statSeed' , 0 );
 				}
-				else if ( target.stat <= 0 ) {
+				else if ( target.data( 'stat' ) <= 0 ) {
 					siblings.splice( i-- , 1 );
 					target.remove();
 				}
@@ -182,19 +194,15 @@
 			head : function(){
 				return current;
 			},
-			bye : function( now ){
-				if ( now ) {
-					current.remove();
-				}
-				else {
-					var stat = current.data( 'stat' );
-					//current.data( 'stat' , Math.round( stat * 0.25 ) );
-					current.data( 'stat' , stat - 1 );
-					current.data( 'statSeed' , -1 );
-				}
+			bye : function(){
+				current.data( 'statSeed' , -1 );
 			},
 			die : function(){
 				dead = true;
+				$.each( siblings , function( i , v ){
+					v.remove();
+				} );
 			}
 		};
+	}
 })();
